@@ -803,7 +803,6 @@ bool Object::loaded_elf(Offset& txtaddr, Offset& dataddr,
                 //
                 //plt_entry_size_ = plt_size_ / ((rel_plt_size_ / rel_plt_entry_size_) + 1);
                 plt_entry_size_ = 16;
-                assert(plt_entry_size_ == 16);
             }
             else
             {
@@ -1306,7 +1305,11 @@ bool Object::get_relocation_entries( Elf_X_Shdr *&rel_plt_scnp,
 
                 std::string _name = &_strs[ _sym.st_name(_index) ];
                 // I'm interested to see if this assert will ever fail.
-                assert(_name.length());
+                if(!_name.length())
+                {
+                    create_printf("Empty name for REL/RELA entry found, ignoring\n");
+                    continue;
+                }
 
                 plt_rel_map[_name] = _offset;
             }
@@ -1951,10 +1954,10 @@ void printSyms( std::vector< Symbol *>& allsymbols )
 
 void Object::parse_opd(Elf_X_Shdr *opd_hdr) {
     // If the OPD is filled in, parse it and fill in our TOC table
-    assert(opd_hdr);
+    if(!opd_hdr) return;
 
     Elf_X_Data data = opd_hdr->get_data();
-    assert(data.isValid());
+    if(!(data.isValid())) return;
 
     // Let's read this puppy
     unsigned long *buf = (unsigned long *)data.d_buf();
@@ -2030,7 +2033,7 @@ Symbol *Object::handle_opd_symbol(Region *opd, Symbol *sym)
     if (!sym) return NULL;
 
     Offset soffset = sym->getOffset();
-    assert(opd->isOffsetInRegion(soffset));  // Symbol must be in .opd section.
+    if(!opd->isOffsetInRegion(soffset)) return NULL;  // Symbol must be in .opd section.
 
     Offset* opd_entry = (Offset*)opd->getPtrToRawData();
     opd_entry += (soffset - opd->getDiskOffset()) / sizeof(Offset); // table of offsets;
@@ -2048,7 +2051,6 @@ Symbol *Object::handle_opd_symbol(Region *opd, Symbol *sym)
         }
         ++i;
     }
-    assert(i < regions_.size());
     retval->setSymbolType(Symbol::ST_FUNCTION);
 #if 0
     retval->tag_ = Symbol::TAG_INTERNAL;  // Not sure if this is an appropriate
@@ -3474,7 +3476,7 @@ int read_except_table_gcc3(Dwarf_FDE *fde_data, Dwarf_Sword fde_count,
                 //Fruit, Someone needs to check the Linux Standard Base,
                 // section 11.6 (as of v3.1), to see what new encodings
                 // exist and how we should decode them in the CIE.
-                assert(!"Unhandled augmentation");
+                dwarf_printf("WARNING: Unhandled augmentation %c\n", augmentor[j]);
                 break;
             }
         }
@@ -4133,7 +4135,7 @@ void Object::parseStabFileLineInfo()
     /* We haven't parsed this file already, so iterate over its stab entries. */
 
     stab_entry * stabEntry = get_stab_info();
-    assert( stabEntry != NULL );
+    if( stabEntry == NULL ) return;
     const char * nextStabString = stabEntry->getStringBase();
 
     const char * currentSourceFile = NULL;
@@ -4268,7 +4270,7 @@ void Object::parseStabFileLineInfo()
                 currentLineBase = stabEntry->desc(i);
                 functionLineToPossiblyAdd = currentLineBase;
 
-                assert(currentFunction);
+                if(!currentFunction) continue;
                 currentAddress = currentFunction->getOffset();
 
             }
@@ -4356,17 +4358,11 @@ void Object::parseLineInfoForCU(Dwarf_Die /*cuDIE*/, LineInformation* /*li_for_m
     Dwarf_Error ignored;
     int status = dwarf_srclines( cuDIE, & lineBuffer, & lineCount, &ignored );
 
-    /* See if we can get anything useful out of the next CU
-     if this one is corrupt. */
-    assert( status != DW_DLV_ERROR );
-
     /* It's OK for a CU not to have line information. */
     if(status != DW_DLV_OK)
     {
         return;
     }
-    assert( status == DW_DLV_OK );
-
 
     StringTablePtr strings(li_for_module->getStrings());
     char** files;
@@ -4489,17 +4485,7 @@ void Object::parseLineInfoForCU(Dwarf_Die /*cuDIE*/, LineInformation* /*li_for_m
             open_statements.push_back(current_statement);
         }
     } /* end iteration over source line entries. */
-    for(auto i = open_statements.begin();
-        i != open_statements.end();
-        ++i)
-    {
-        li_for_module->addLine((unsigned int)(i->string_table_index),
-                               (unsigned int)(i->line_number),
-                               (unsigned int)(i->column_number),
-                               i->start_addr,
-                               current_statement.start_addr);
-        assert(0);
-    }
+
 
 /* Free this CU's source lines. */
     dwarf_srclines_dealloc(dbg, lineBuffer, lineCount);
@@ -4796,7 +4782,7 @@ void Object::parseStabTypes()
                 }
                 case N_ECOMM: {
                     //copy this set of fields
-                    assert(currentFunctionName);
+                    if(!currentFunctionName) break;
                     if(!associated_symtab->findSymbol(bpfv,
                                         *currentFunctionName,
                                         Symbol::ST_FUNCTION,
@@ -5031,7 +5017,7 @@ bool Object::parse_all_relocations(Elf_X &elf, Elf_X_Shdr *dynsym_scnp,
             }
 
             // A symbol should be uniquely identified by its index in the symbol table
-            assert(result.second);
+            if(!result.second) continue;
         }
     }
 
@@ -5115,24 +5101,24 @@ bool Object::parse_all_relocations(Elf_X &elf, Elf_X_Shdr *dynsym_scnp,
                 region = shToReg_it->second;
             }
 
-            assert(region != NULL);
-
-            relocationEntry newrel(0, relOff, addend, name, sym, relType, regType);
-            region->addRelocationEntry(newrel);
-            // relocations are also stored with their targets
-            // Need to find target region
-            if (sym) {
-                if (shdr->sh_info() != 0) {
-                    Region *targetRegion = NULL;
-                    shToReg_it = shToRegion.find(shdr->sh_info());
-                    if( shToReg_it != shToRegion.end() ) {
-                        targetRegion = shToReg_it->second;
+            if(region != NULL)
+            {
+                relocationEntry newrel(0, relOff, addend, name, sym, relType, regType);
+                region->addRelocationEntry(newrel);
+                // relocations are also stored with their targets
+                // Need to find target region
+                if (sym) {
+                    if (shdr->sh_info() != 0) {
+                        Region *targetRegion = NULL;
+                        shToReg_it = shToRegion.find(shdr->sh_info());
+                        if( shToReg_it != shToRegion.end() ) {
+                            targetRegion = shToReg_it->second;
+                        }
+                        assert(targetRegion != NULL);
+                        targetRegion->addRelocationEntry(newrel);
                     }
-                    assert(targetRegion != NULL);
-                    targetRegion->addRelocationEntry(newrel);
                 }
             }
-
         }
     }
 
