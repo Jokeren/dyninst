@@ -2476,10 +2476,6 @@ bool Object::dwarf_parse_aranges(Dwarf * dbg, std::set<Dwarf_Off>& dies_seen)
     return true;
 }
 
-void print_err_msg(){
-    cerr << "Error message:" << dwarf_errmsg(-1) << endl;
-}
-
 bool Object::fix_global_symbol_modules_static_dwarf()
 {
     /* Initialize libdwarf. */
@@ -2497,11 +2493,9 @@ bool Object::fix_global_symbol_modules_static_dwarf()
             NULL, NULL, NULL) == 0;
         cu_off = next_cu_off)
     {
-        //print_err_msg();
         Dwarf_Off cu_die_off = cu_off + cu_header_size;
         Dwarf_Die cu_die, *cu_die_p; 
         cu_die_p = dwarf_offdie(dbg, cu_die_off, &cu_die);
-        //print_err_msg();
 
         if(cu_die_p == NULL) continue;
         //if(dies_seen.find(cu_die_off) != dies_seen.end()) continue;
@@ -4355,41 +4349,41 @@ void Object::parseStabFileLineInfo()
 } /* end parseStabFileLineInfo() */
 
 struct open_statement {
-    unsigned long long string_table_index;
+    Dwarf_Word string_table_index;
     Dwarf_Addr start_addr;
     Dwarf_Addr end_addr;
-    unsigned long long line_number;
-    Dwarf_Sword column_number;
+    int line_number;
+    int column_number;
 };
 
 
-void Object::parseLineInfoForCU(Dwarf_Die /*cuDIE*/, LineInformation* /*li_for_module*/)
+void Object::parseLineInfoForCU(Dwarf_Die cuDIE, LineInformation* li_for_module)
 {
-#if 0 //TODO
     std::vector<open_statement> open_statements;
-    ::Dwarf **dbg_ptr = dwarf->line_dbg();
-    if (!dbg_ptr)
-        return;
-    if(!cuDIE) return;
-    ::Dwarf *dbg = *dbg_ptr;
+    //Dwarf **dbg_ptr = dwarf->line_dbg();
+    //if (!dbg_ptr)
+    //    return;
+    //if(!cuDIE) return;
+    //Dwarf *dbg = *dbg_ptr;
+    
     /* Acquire this CU's source lines. */
-    Dwarf_Line * lineBuffer;
-    Dwarf_Sword lineCount;
-    Dwarf_Error ignored;
-    int status = dwarf_srclines( cuDIE, & lineBuffer, & lineCount, &ignored );
+    Dwarf_Lines * lineBuffer;
+    size_t lineCount;
+    //Dwarf_Error ignored;
+    int status = dwarf_getsrclines(&cuDIE, &lineBuffer, &lineCount);
 
     /* It's OK for a CU not to have line information. */
-    if(status != DW_DLV_OK)
+    if(status != 0)
     {
         return;
     }
 
     StringTablePtr strings(li_for_module->getStrings());
-    char** files;
+    Dwarf_Files * files;
     size_t offset = strings->size();
-    Dwarf_Sword filecount;
-    status = dwarf_srcfiles(cuDIE, &files, &filecount, &ignored);
-    if (status != DW_DLV_OK ) 
+    size_t filecount;
+    status = dwarf_getsrcfiles(&cuDIE, &files, &filecount);
+    if (status != 0 ) 
     {
         // It could happen the line table is present,
 	// but there is no line in the table
@@ -4399,20 +4393,21 @@ void Object::parseLineInfoForCU(Dwarf_Die /*cuDIE*/, LineInformation* /*li_for_m
     // so we ensure that we're adding a block of unknown, 1...n to the string table
     // and that offset + dwarf_line_srcfileno points to the correct string
     strings->push_back("<Unknown file>");
-    for(int i = 0; i < filecount; i++)
+    for(size_t i = 0; i < filecount; i++)
     {
-        char* tmp = NULL;
-        if(truncateLineFilenames && (tmp = strrchr(files[i], '/')))
+        auto filename = dwarf_filesrc(files, i, nullptr, nullptr);
+        auto tmp = strrchr(filename, '/');
+        if(truncateLineFilenames && tmp)
         {
             strings->push_back(tmp);
         }
         else
         {
-            strings->push_back(files[i]);
+            strings->push_back(filename);
         }
-        dwarf_dealloc(dbg, files[i], DW_DLA_STRING);
+        //dwarf_dealloc(dbg, files[i], DW_DLA_STRING);
     }
-    dwarf_dealloc(dbg, files, DW_DLA_LIST);
+    //dwarf_dealloc(dbg, files, DW_DLA_LIST);
     li_for_module->setStrings(strings);
 
     /* The 'lines' returned are actually interval markers; the code
@@ -4422,31 +4417,32 @@ void Object::parseLineInfoForCU(Dwarf_Die /*cuDIE*/, LineInformation* /*li_for_m
     Offset baseAddr = getBaseAddress();
 
     Dwarf_Addr cu_high_pc = 0;
-    dwarf_highpc(cuDIE, &cu_high_pc, NULL);
+    dwarf_highpc(&cuDIE, &cu_high_pc);
+
     /* Iterate over this CU's source lines. */
     open_statement current_statement;
-    for ( int i = 0; i < lineCount; i++ )
+    for(size_t i = 0; i < lineCount; i++ )
     {
+        auto line = dwarf_onesrcline(lineBuffer, i); 
+
         /* Acquire the line number, address, source, and end of sequence flag. */
-        status = dwarf_lineno( lineBuffer[i], & current_statement.line_number, NULL );
-        if ( status != DW_DLV_OK ) {
+        status = dwarf_lineno(line, &current_statement.line_number);
+        if ( status != 0 ) {
             cout << "dwarf_lineno failed" << endl;
             continue;
         }
 
-        status = dwarf_lineoff( lineBuffer[i], & current_statement.column_number, NULL );
-        if ( status != DW_DLV_OK ) { current_statement.column_number = 0; }
+        status = dwarf_linecol(line, &current_statement.column_number);
+        if ( status != 0 ) { current_statement.column_number = 0; }
 
-        status = dwarf_lineaddr( lineBuffer[i], & current_statement.start_addr, NULL );
-        if ( status != DW_DLV_OK )
+        status = dwarf_lineaddr(line, &current_statement.start_addr);
+        if ( status != 0 )
         {
             cout << "dwarf_lineaddr failed" << endl;
             continue;
-
         }
 
         current_statement.start_addr += baseAddr;
-
 
         if (dwarf->debugLinkFile()) {
             Offset new_lineAddr;
@@ -4454,16 +4450,16 @@ void Object::parseLineInfoForCU(Dwarf_Die /*cuDIE*/, LineInformation* /*li_for_m
             if (result)
                 current_statement.start_addr = new_lineAddr;
         }
-        status = dwarf_line_srcfileno( lineBuffer[i], & current_statement.string_table_index, NULL );
-        if ( status != DW_DLV_OK ) {
-            cout << "dwarf_line_srcfileno failed" << endl;
-            continue;
-        }
-        current_statement.string_table_index += offset;
+        //status = dwarf_line_srcfileno(line, &current_statement.string_table_index);
+        //if ( status != 0 ) {
+        //    cout << "dwarf_line_srcfileno failed" << endl;
+        //    continue;
+        //}
+        //current_statement.string_table_index += offset;
 
         bool isEndOfSequence;
-        status = dwarf_lineendsequence( lineBuffer[i], & isEndOfSequence, NULL );
-        if ( status != DW_DLV_OK ) {
+        status = dwarf_lineendsequence(line, &isEndOfSequence);
+        if ( status != 0 ) {
             cout << "dwarf_lineendsequence failed" << endl;
             continue;
         }
@@ -4471,8 +4467,8 @@ void Object::parseLineInfoForCU(Dwarf_Die /*cuDIE*/, LineInformation* /*li_for_m
             isEndOfSequence = true;
         }
         bool isStatement;
-        status = dwarf_linebeginstatement(lineBuffer[i], &isStatement, NULL);
-        if(status != DW_DLV_OK) {
+        status = dwarf_linebeginstatement(line, &isStatement);
+        if(status != 0) {
             cout << "dwarf_linebeginstatement failed" << endl;
             continue;
         }
@@ -4506,10 +4502,8 @@ void Object::parseLineInfoForCU(Dwarf_Die /*cuDIE*/, LineInformation* /*li_for_m
         }
     } /* end iteration over source line entries. */
 
-
 /* Free this CU's source lines. */
-    dwarf_srclines_dealloc(dbg, lineBuffer, lineCount);
-#endif //TODO
+    //dwarf_srclines_dealloc(dbg, lineBuffer, lineCount);
 }
 
 
