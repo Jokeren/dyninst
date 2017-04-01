@@ -4450,6 +4450,7 @@ void Object::parseLineInfoForCU(Dwarf_Die cuDIE, LineInformation* li_for_module)
             if (result)
                 current_statement.start_addr = new_lineAddr;
         }
+        //TODO
         //status = dwarf_line_srcfileno(line, &current_statement.string_table_index);
         //if ( status != 0 ) {
         //    cout << "dwarf_line_srcfileno failed" << endl;

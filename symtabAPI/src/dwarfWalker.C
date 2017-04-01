@@ -188,7 +188,7 @@ bool DwarfWalker::parse() {
     return true;
 }
 
-bool DwarfWalker::parseModule(bool is_info, Module *&fixUnknownMod) {
+bool DwarfWalker::parseModule(bool /*is_info*/, Module *&fixUnknownMod) {
     /* Obtain the module DIE. */
     Dwarf_Die moduleDIE = current_cu_die;
     /*Dwarf_Die * cu_die_p = 0; 
@@ -452,21 +452,8 @@ bool DwarfWalker::parse_int(Dwarf_Die e, bool p) {
 
         Dwarf_Die siblingDwarf;
         Dwarf_Die ent = entry();
-        //auto offset_c = dwarf_dieoffset(&current_cu_die);
-        auto offset_e = dwarf_dieoffset(&ent); 
-        bool is_info = !dwarf_hasattr_integrate(&ent, DW_TAG_type_unit);
-        Dwarf_Die * cu_die_p = 0; 
-        //auto func = is_info ? dwarf_offdie : dwarf_offdie_types; 
-        //cu_die_p = func(dbg(), offset_e + offset_c, &siblingDwarf);
-        if(is_info){
-            cu_die_p = dwarf_offdie(dbg(), offset_e, &siblingDwarf);
-        }else{
-            cu_die_p = dwarf_offdie_types(dbg(), offset_e, &siblingDwarf);
-        }
-
-        if (cu_die_p == 0) {
-            break;
-        }
+        int status = dwarf_siblingof(&ent, &siblingDwarf);
+        DWARF_CHECK_RET(status == -1);
 
         e = siblingDwarf;
     }
@@ -1522,13 +1509,8 @@ bool DwarfWalker::findDieName(::Dwarf * /*dbg*/, Dwarf_Die die, std::string &nam
     auto cname = dwarf_diename(&die); 
     /* Squash errors from unsupported forms, like DW_FORM_GNU_strp_alt. */
     if (cname == 0) {
-        cerr << "Error message:" << dwarf_errmsg( dwarf_errno() ) << endl;
-        /*if (dwarf_errno(error) == DW_DLE_ATTR_FORM_BAD) {
-            status = -1;
-        }*/
-        //dwarf_dealloc( dbg, error, DW_DLA_ERROR );
         name = std::string();
-        return false;
+        return true;
     }
 
     name = cname;
@@ -1554,7 +1536,6 @@ bool DwarfWalker::findFuncName() {
     //if (status != 0)
     if (status == 0)
         status = dwarf_attr(&e, DW_AT_linkage_name, &linkageNameAttr);
-    DWARF_CHECK_RET(status == 0); // previously ==1
     if ( status != 0 )  { // previously ==1
         const char *dwarfName = dwarf_formstring(&linkageNameAttr);
         //DWARF_FAIL_RET(dwarfName);
@@ -1610,7 +1591,6 @@ bool DwarfWalker::getReturnType(bool hasSpecification, Type *&returnType) {
         status = dwarf_attr(&e, DW_AT_type, &typeAttribute);
     }
 
-    DWARF_CHECK_RET(status == 0);
     if ( status == 0) {
         dwarf_printf("(0x%lx) Return type is void\n", id());
         return false;
@@ -1680,10 +1660,10 @@ bool DwarfWalker::findType(Type *&type, bool defaultToVoid) {
     /* Acquire the parameter's type. */
     Dwarf_Attribute typeAttribute;
     Dwarf_Die e = specEntry();
-    auto status = dwarf_attr( &e, DW_AT_type, &typeAttribute);
-    DWARF_CHECK_RET(status == 0);
+    auto attr_p = dwarf_attr( &e, DW_AT_type, &typeAttribute);
+    //cerr << "findType() err msg: " << dwarf_errmsg(-1) << endl;
 
-    if (status == 0) {
+    if (attr_p == 0) {
         if (defaultToVoid) {
             type = tc()->findType("void");
             return (type != NULL);
@@ -1773,9 +1753,8 @@ bool DwarfWalker::getLineInformation(Dwarf_Word &variableLineNo,
     Dwarf_Attribute fileDeclAttribute;
     Dwarf_Die e = specEntry();
     auto status = dwarf_attr( &e, DW_AT_decl_file, &fileDeclAttribute);
-    DWARF_CHECK_RET(status == 0);
 
-    if (status == 0) {
+    if (status != 0) {
         fileName = "";
         StringTablePtr files = srcFiles();
         Dwarf_Word fileNameDeclVal;
@@ -1794,8 +1773,7 @@ bool DwarfWalker::getLineInformation(Dwarf_Word &variableLineNo,
 
     Dwarf_Attribute lineNoAttribute;
     status = dwarf_attr(&e, DW_AT_decl_line, &lineNoAttribute);
-    DWARF_CHECK_RET(status == 0);
-    if (status != 0) return true;
+    if (status == 0) return true;
 
     /* We don't need to tell Dyninst a line number for C++ static variables,
        so it's OK if there isn't one. */
@@ -2075,7 +2053,6 @@ bool DwarfWalker::findVisibility(visibility_t &visibility) {
     Dwarf_Attribute visAttr;
     Dwarf_Die e = entry();
     auto status = dwarf_attr(&e, DW_AT_accessibility, &visAttr);
-    DWARF_CHECK_RET(status == 0);
     if (status != 0) {
         visibility = visPrivate;
         return true;
@@ -2102,9 +2079,8 @@ bool DwarfWalker::findValue(long &value, bool &valid) {
     Dwarf_Attribute valueAttr;
     Dwarf_Die e = entry();
     auto status = dwarf_attr( &e, DW_AT_const_value, & valueAttr);
-    DWARF_CHECK_RET(status == 0);
 
-    if (status != 0) {
+    if (status == 0) {
         valid = false;
         return true;
     }
@@ -2125,7 +2101,6 @@ bool DwarfWalker::fixBitFields(std::vector<VariableLocation> &locs,
     Dwarf_Attribute bitOffset;
     Dwarf_Die e = entry();
     auto status = dwarf_attr( &e, DW_AT_bit_offset, & bitOffset);
-    DWARF_CHECK_RET(status == 0);
 
     if ( status == 0 && locs.size() )
     {
@@ -2216,7 +2191,6 @@ bool DwarfWalker::parseSubrangeAUX(Dwarf_Die entry,
     //bool is_info = dwarf_get_die_infotypes_flag(entry);
     bool is_info = !dwarf_hasattr_integrate(&entry, DW_TAG_type_unit);
     auto status = dwarf_attr( &entry, DW_AT_lower_bound, & lowerBoundAttribute);
-    DWARF_CHECK_RET(status == 0);
 
     if ( status == 0 ) {
         if (!decipherBound(lowerBoundAttribute, is_info, loBound )) return false;
@@ -2226,11 +2200,9 @@ bool DwarfWalker::parseSubrangeAUX(Dwarf_Die entry,
     /* Look for the upper bound. */
     Dwarf_Attribute upperBoundAttribute;
     status = dwarf_attr( &entry, DW_AT_upper_bound, & upperBoundAttribute);
-    DWARF_CHECK_RET(status == 0);
 
     if ( status == 0 ) {
         status = dwarf_attr( &entry, DW_AT_count, & upperBoundAttribute);
-        DWARF_CHECK_RET(status == 0);
     }
 
     if ( status == 0 ) {
@@ -2287,19 +2259,12 @@ typeArray *DwarfWalker::parseMultiDimensionalArray(Dwarf_Die range,
     Dwarf_Die nextSibling;
     //bool is_info = dwarf_get_die_infotypes_flag(range);
     //int status = dwarf_siblingof_b( dbg(), range, is_info, &nextSibling, NULL );
-    //DWARF_CHECK_RET_VAL(status == 1, NULL);
-    auto cu_die_off = dwarf_dieoffset(&range); 
-    bool is_info = !dwarf_hasattr_integrate(&range, DW_TAG_type_unit);
-    Dwarf_Die * cu_die_p = 0; 
-    if(is_info){
-        cu_die_p = dwarf_offdie(dbg(), cu_die_off, &nextSibling);
-    }else{
-        cu_die_p = dwarf_offdie_types(dbg(), cu_die_off, &nextSibling);
-    }
+    int status = dwarf_siblingof(&range, &nextSibling);
+    DWARF_CHECK_RET_VAL(status == 1, NULL);
 
     snprintf(buf, 31, "__array%d", (int) offset());
 
-    if ( cu_die_p  == 0 ) {
+    if ( status == 1 ) {
         /* Terminate the recursion by building an array type out of the elemental type.
            Use the negative dieOffset to avoid conflicts with the range type created
            by parseSubRangeDIE(). */
@@ -2395,7 +2360,6 @@ bool DwarfWalker::decipherBound(Dwarf_Attribute boundAttribute, bool is_info,
                 /* Does it describe a nameless constant? */
                 Dwarf_Attribute constBoundAttribute;
                 auto status = dwarf_attr(&boundEntry, DW_AT_const_value, &constBoundAttribute);
-                DWARF_CHECK_RET(status == 0);
 
                 if ( status == 0 ) {
                     Dwarf_Word constBoundValue;
@@ -2434,35 +2398,37 @@ bool DwarfWalker::decipherBound(Dwarf_Attribute boundAttribute, bool is_info,
 }
 
 //FIXME whole function
-bool DwarfWalker::decodeExpression(Dwarf_Attribute & /*attr*/,
-				   std::vector<VariableLocation> &locs) {
-  //Dwarf_Word expr_len;
-  /*Dwarf_Ptr expr_ptr;
-  DWARF_FAIL_RET(dwarf_formexprloc(attr, &expr_len, &expr_ptr));
-  unsigned char *bitstream = (unsigned char *) expr_ptr;
+bool DwarfWalker::decodeExpression(Dwarf_Attribute &attr,
+        std::vector<VariableLocation> &locs) {
+    size_t expr_len;
+    //Dwarf_Ptr expr_ptr;
+    //DWARF_FAIL_RET(dwarf_formexprloc(attr, &expr_len, &expr_ptr));
+    //unsigned char *bitstream = (unsigned char *) expr_ptr;
 
-  // expr_ptr is a pointer to a bytestream. Try to turn it into a Dwarf_Op* so
-  // we can use decodeDwarfExpression.
+    // expr_ptr is a pointer to a bytestream. Try to turn it into a Dwarf_Op* so
+    // we can use decodeDwarfExpression.
 
-  dwarf_printf("(0x%lx) bitstream for expr has len %d\n", id(), expr_len);
-  for (unsigned i = 0; i < expr_len; ++i) {
-    dwarf_printf("(0x%lx) \t %#hhx\n", id(), bitstream[i]);
-  }*/
+    /*dwarf_printf("(0x%lx) bitstream for expr has len %d\n", id(), expr_len);
+    for (unsigned i = 0; i < expr_len; ++i) {
+        dwarf_printf("(0x%lx) \t %#hhx\n", id(), bitstream[i]);
+    }*/
 
-  Dwarf_Sword cnt = 1;
-  Dwarf_Op* *descs;
+    Dwarf_Sword cnt = 1;
+    Dwarf_Op * descs;
 
-  //DWARF_FAIL_RET(dwarf_loclist_from_expr_a(dbg(), expr_ptr, expr_len, addr_size,
-  //					   &descs, &cnt, NULL));
-  if(cnt != 1) return false;
+    dwarf_getlocation(&attr, &descs, &expr_len);
 
-  bool ret = decodeLocationListForStaticOffsetOrAddress(&descs, cnt, locs, NULL);
-  //deallocateLocationList(&descs, cnt);
-  return ret;
+    //DWARF_FAIL_RET(dwarf_loclist_from_expr_a(dbg(), expr_ptr, expr_len, addr_size,
+    //            &descs, &cnt, NULL));
+    //if(cnt != 1) return false;
+
+    bool ret = decodeLocationListForStaticOffsetOrAddress(&descs, cnt, locs, NULL);
+    //deallocateLocationList(&descs, cnt);
+    return ret;
 }
 
 bool DwarfWalker::decodeLocationListForStaticOffsetOrAddress( 
-        Dwarf_Op *** locationList,
+        Dwarf_Op ** locationList,
         Dwarf_Sword listLength,
         std::vector<VariableLocation>& locs,
         Address * initialStackValue)
@@ -2500,7 +2466,7 @@ bool DwarfWalker::decodeLocationListForStaticOffsetOrAddress(
     for (unsigned locIndex = 0 ; locIndex < listLength; locIndex++) {
 
         /* There is only one location. */
-        Dwarf_Op ** location = locationList[locIndex];
+        Dwarf_Op * location = locationList[locIndex];
 
         VariableLocation loc;
         // Initialize location values.
@@ -2526,7 +2492,7 @@ bool DwarfWalker::decodeLocationListForStaticOffsetOrAddress(
 
         long int *tmp = (long int *)initialStackValue;
         /* FIXME: should 1 be passed as the size of the list of location being passed? */
-        bool result = decodeDwarfExpression(*location, 1, tmp, loc,
+        bool result = decodeDwarfExpression(location, 1, tmp, loc,
                 symtab()->getArchitecture());
         if (!result) {
             dwarf_printf("(0x%lx): decodeDwarfExpr failed\n", id());
@@ -2576,7 +2542,7 @@ bool DwarfWalker::decodeLocationListForStaticOffsetOrAddress(
 } /* end decodeLocationListForStaticOffsetOrAddress() */
 
 
-void DwarfWalker::deallocateLocationList( Dwarf_Op* ** /*locationList*/,
+void DwarfWalker::deallocateLocationList( Dwarf_Op ** /*locationList*/,
                                           Dwarf_Sword listLength )
 {
   for( int i = 0; i < listLength; i++ ) {

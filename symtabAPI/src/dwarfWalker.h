@@ -307,11 +307,11 @@ private:
     bool decodeExpression(Dwarf_Attribute &attr,
             std::vector<VariableLocation> &locs);
 
-    bool decodeLocationListForStaticOffsetOrAddress(Dwarf_Op* **locationList,
+    bool decodeLocationListForStaticOffsetOrAddress(Dwarf_Op **locationList,
             Dwarf_Sword listLength,
             std::vector<VariableLocation>& locs,
             Address * initialStackValue = NULL);
-    void deallocateLocationList(Dwarf_Op* **locationList,
+    void deallocateLocationList(Dwarf_Op **locationList,
             Dwarf_Sword listLength);
 
 
