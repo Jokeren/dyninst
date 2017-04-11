@@ -290,8 +290,7 @@ private:
     bool findString(Dwarf_Half attr, std::string &str);
 public:
     static bool findConstant(Dwarf_Half attr, Address &value, Dwarf_Die entry, Dwarf* dbg);
-    static bool findConstantWithForm(Dwarf_Attribute &attr,
-            Dwarf_Half form,
+    static bool findConstantWithForm(Dwarf_Attribute &attr, Dwarf_Half form,
             Address &value);
     static std::vector<AddressRange> getDieRanges(Dwarf* dbg, Dwarf_Die die, Offset base);
 private:
