@@ -6,10 +6,10 @@ if (UNIX)
     include(ExternalProject)
     ExternalProject_Add(LibElf
       PREFIX ${CMAKE_BINARY_DIR}/libelf
-      URL http://www.mr511.de/software/libelf-0.8.13.tar.gz
+      URL https://sourceware.org/elfutils/ftp/0.168/elfutils-0.168.tar.bz2
       CONFIGURE_COMMAND <SOURCE_DIR>/configure --enable-shared --prefix=${CMAKE_BINARY_DIR}/libelf
-      BUILD_COMMAND make
-      INSTALL_COMMAND make install
+      BUILD_COMMAND make -C libelf
+      INSTALL_COMMAND make -C libelf install
       )
     set(LIBELF_INCLUDE_DIR ${CMAKE_BINARY_DIR}/libelf/include)
     set(LIBELF_LIBRARIES ${CMAKE_BINARY_DIR}/libelf/lib/libelf.so)
@@ -20,7 +20,10 @@ if (UNIX)
 
   add_library(libelf_imp SHARED IMPORTED)
   set_property(TARGET libelf_imp
-    PROPERTY IMPORTED_LOCATION ${LIBELF_LIBRARIES}) 
+    PROPERTY IMPORTED_LOCATION ${LIBELF_LIBRARIES})
+  if(NOT LIBELF_FOUND)
+    add_dependencies(libelf_imp LibElf)
+  endif()
 
   find_package (LibDwarf)
 
@@ -36,7 +39,7 @@ if (UNIX)
       URL http://www.paradyn.org/libdwarf/libdwarf-20130126.tar.gz
       #	GIT_REPOSITORY git://git.code.sf.net/p/libdwarf/code libdwarf-code
       #	GIT_TAG 20130126
-      CONFIGURE_COMMAND CFLAGS=-I${LIBELF_INCLUDE_DIR} LDFLAGS=-L${CMAKE_BINARY_DIR}/libelf/lib <SOURCE_DIR>/libdwarf/configure --enable-shared
+      CONFIGURE_COMMAND env CFLAGS=${CMAKE_C_FLAGS}\ -I${LIBELF_INCLUDE_DIR} LDFLAGS=-L${CMAKE_BINARY_DIR}/libelf/lib <SOURCE_DIR>/libdwarf/configure --enable-shared
       BUILD_COMMAND make
       INSTALL_DIR ${CMAKE_BINARY_DIR}/libdwarf
       INSTALL_COMMAND mkdir -p <INSTALL_DIR>/include && mkdir -p <INSTALL_DIR>/lib && install <SOURCE_DIR>/libdwarf/libdwarf.h <INSTALL_DIR>/include && install <SOURCE_DIR>/libdwarf/dwarf.h <INSTALL_DIR>/include && install <BINARY_DIR>/libdwarf.so <INSTALL_DIR>/lib
@@ -53,6 +56,9 @@ if (UNIX)
   add_library(libdwarf_imp SHARED IMPORTED)
   set_property(TARGET libdwarf_imp 
     PROPERTY IMPORTED_LOCATION ${LIBDWARF_LIBRARIES})
+  if(NOT LIBDWARF_FOUND)
+    add_dependencies(libdwarf_imp LibDwarf)
+  endif()
 
   if (NOT USE_GNU_DEMANGLER)
     find_package (LibIberty)
@@ -63,19 +69,23 @@ if (UNIX)
       ExternalProject_Add(LibIberty
 	PREFIX ${CMAKE_BINARY_DIR}/binutils
 	URL http://ftp.gnu.org/gnu/binutils/binutils-2.23.tar.gz
-	CONFIGURE_COMMAND CFLAGS=-fPIC CPPFLAGS=-fPIC PICFLAG=-fPIC <SOURCE_DIR>/libiberty/configure --prefix=${CMAKE_BINARY_DIR}/libiberty --enable-shared
+	CONFIGURE_COMMAND env CFLAGS=${CMAKE_C_FLAGS}\ -fPIC CPPFLAGS=-fPIC PICFLAG=-fPIC <SOURCE_DIR>/libiberty/configure --prefix=${CMAKE_BINARY_DIR}/libiberty --enable-shared
 	BUILD_COMMAND make all
 	INSTALL_DIR ${CMAKE_BINARY_DIR}/libiberty
 	INSTALL_COMMAND install <BINARY_DIR>/libiberty.a <INSTALL_DIR>
 	)
       set(IBERTY_LIBRARIES ${CMAKE_BINARY_DIR}/libiberty/libiberty.a)
       set(IBERTY_FOUND TRUE)
+      set(IBERTY_BUILD TRUE)
     endif()
 
     message(STATUS "Using libiberty ${IBERTY_LIBRARIES}")
     add_library(libiberty_imp STATIC IMPORTED)
     set_property(TARGET libiberty_imp
       PROPERTY IMPORTED_LOCATION ${IBERTY_LIBRARIES})
+    if(IBERTY_BUILD)
+      add_dependencies(libiberty_imp LibIberty)
+    endif()
   endif()
 
   find_package (ThreadDB)
@@ -139,22 +149,24 @@ if(NOT Boost_FOUND)
           --ignore-site-config
           --link=static
           --runtime-link=shared
+          --layout=tagged
           --threading=multi)
   set(BOOST_BUILD "./b2")
   if(WIN32)
     set(BOOST_BOOTSTRAP call bootstrap.bat)
     set(BOOST_BASE boost/src/Boost)
-    list(APPEND BOOST_ARGS --layout=system)
-    set(BOOST_LIB_PREFIX lib)
+    if(CMAKE_SIZEOF_VOID_P STREQUAL "8")
+	  list(APPEND BOOST_ARGS address-model=64)
+    endif()
   else()
     set(BOOST_BOOTSTRAP "./bootstrap.sh")
     set(BOOST_BASE boost/src/boost)
-    list(APPEND BOOST_ARGS --layout=tagged)
-  endif()
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    list(APPEND BOOST_ARGS variant=debug)
-  else()
-    list(APPEND BOOST_ARGS variant=release)
+    # We need to build both debug/release on windows as we don't use CMAKE_BUILD_TYPE
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+      list(APPEND BOOST_ARGS variant=debug)
+    else()
+      list(APPEND BOOST_ARGS variant=release)
+    endif()
   endif()
 
   message(STATUS "No boost found, attempting to build as external project")
@@ -171,7 +183,14 @@ if(NOT Boost_FOUND)
     )
   set(Boost_INCLUDE_DIRS ${CMAKE_BINARY_DIR}/${BOOST_BASE})
   set(Boost_LIBRARY_DIRS ${CMAKE_BINARY_DIR}/${BOOST_BASE}/stage/lib)
-  set(Boost_LIBRARIES ${BOOST_LIB_PREFIX}boost_thread ${BOOST_LIB_PREFIX}boost_system ${BOOST_LIB_PREFIX}boost_date_time)
+  if(MSVC)
+    # We need to specify different library names for debug vs release
+    set(Boost_LIBRARIES optimized libboost_thread-mt debug libboost_thread-mt-gd)
+    list(APPEND Boost_LIBRARIES optimized libboost_system-mt debug libboost_system-mt-gd)
+    list(APPEND Boost_LIBRARIES optimized libboost_date_time-mt debug libboost_date_time-mt-gd)
+  else()
+    set(Boost_LIBRARIES boost_thread boost_system boost_date_time)
+  endif()
 endif()
 
 link_directories ( ${Boost_LIBRARY_DIRS} )
