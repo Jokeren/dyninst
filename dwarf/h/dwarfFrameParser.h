@@ -112,7 +112,7 @@ private:
             Address &lowpc,
             FrameErrors_t &err_result);
 
-    bool getFrame(Address pc, 
+    bool getFDE(Address pc, 
             Dwarf_Frame* &frame, 
             Address &low,
             Address &high,
@@ -123,13 +123,13 @@ private:
             Dwarf_Half &dwarf_reg,
             FrameErrors_t &err_result);
 
-    bool handleExpression(Address pc,
+/*    bool handleExpression(Address pc,
             Dwarf_Sword registerNum,
             MachRegister origReg,
             Architecture arch,
             DwarfResult &cons,
             bool &done,
-            FrameErrors_t &err_result);
+            FrameErrors_t &err_result);*/
 
     void setupFdeData();
 

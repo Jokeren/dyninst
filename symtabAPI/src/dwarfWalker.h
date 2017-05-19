@@ -306,7 +306,14 @@ private:
     bool decodeExpression(Dwarf_Attribute &attr,
             std::vector<VariableLocation> &locs);
 
-    bool decodeLocationListForStaticOffsetOrAddress(Dwarf_Op **locationList,
+    typedef struct {
+        Dwarf_Addr ld_lopc, ld_hipc;
+        Dwarf_Op * dwarfOp;
+        size_t opLen;
+    }LocDesc;
+
+    bool decodeLocationListForStaticOffsetOrAddress(
+            std::vector<LocDesc>& locationList,
             Dwarf_Sword listLength,
             std::vector<VariableLocation>& locs,
             Dwarf_Attribute &attr,

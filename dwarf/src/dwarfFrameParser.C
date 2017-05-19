@@ -27,7 +27,6 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
 #include "dwarfFrameParser.h"
 #include "dwarfExprParser.h"
 #include "dwarfResult.h"
@@ -38,13 +37,13 @@
 #include <iostream>
 #include "debug_common.h" // dwarf_printf
 
-#define DW_FRAME_CFA_COL3 ((Dwarf_Half) -1)
-
+//#define DW_FRAME_CFA_COL3 ((Dwarf_Half) -1)
+#define DW_FRAME_CFA_COL3               1036
 using namespace Dyninst;
 using namespace DwarfDyninst;
 using namespace std;
 
-struct frameParser_key
+/*struct frameParser_key
 {
     Dwarf * dbg;
     Architecture arch;
@@ -57,13 +56,14 @@ struct frameParser_key
         return (dbg < rhs.dbg) || (dbg == rhs.dbg && arch < rhs.arch);
     }
 
-};
-
+};*/
 
 std::map<DwarfFrameParser::frameParser_key, DwarfFrameParser::Ptr> DwarfFrameParser::frameParsers;
 
 DwarfFrameParser::Ptr DwarfFrameParser::create(Dwarf * dbg, Architecture arch) 
 {
+    if(!dbg) return NULL;
+
     frameParser_key k(dbg, arch);
 
     auto iter = frameParsers.find(k);
@@ -192,7 +192,7 @@ bool DwarfFrameParser::getRegsForFunction(
      **/
     Dwarf_Frame * frame;
     Address low, high;
-    if (!getFrame(entryPC, frame, low, high, err_result)) {
+    if (!getFDE(entryPC, frame, low, high, err_result)) {
         dwarf_printf("\t Failed to find FDE for 0x%lx, returning error\n", entryPC);
         assert(err_result != FE_No_Error);
         return false;
@@ -257,7 +257,7 @@ bool DwarfFrameParser::getRegAtFrame(Address pc,
      **/
     Dwarf_Frame * frame;
     Address u1, u2;
-    if (!getFrame(pc, frame, u1, u2, err_result)) {
+    if (!getFDE(pc, frame, u1, u2, err_result)) {
         dwarf_printf("\t No FDE at 0x%lx, ret false\n", pc);
         assert(err_result != FE_No_Error);
         return false;
@@ -281,7 +281,7 @@ bool DwarfFrameParser::getRegAtFrame(Address pc,
 bool DwarfFrameParser::getRegAtFrame_aux(Address pc,
         Dwarf_Frame * frame,
         Dwarf_Half dwarf_reg,
-        MachRegister orig_reg,
+        MachRegister /*orig_reg*/,
         DwarfResult &cons,
         Address & lowpc,
         FrameErrors_t &err_result) 
@@ -293,7 +293,7 @@ bool DwarfFrameParser::getRegAtFrame_aux(Address pc,
     dwarf_printf("getRegAtFrame_aux for 0x%lx, addr width %d\n", pc, width);
 
     //Dwarf_Small value_type;
-    Dwarf_Sword offset_relevant, register_num, offset_or_block_len;
+    //Dwarf_Sword offset_relevant, register_num, offset_or_block_len;
     //Dwarf_Ptr block_ptr;
     Dwarf_Addr row_pc;
 
@@ -318,40 +318,16 @@ bool DwarfFrameParser::getRegAtFrame_aux(Address pc,
         return false;
     }
 
+    dwarf_frame_info(frame, NULL, &row_pc, NULL); 
+    lowpc = (Address) row_pc;
+
     if (!decodeDwarfExpression(ops, nops, NULL, cons, arch)) {
         dwarf_printf("\t Failed to decode dwarf expr, ret false\n");
         err_result = FE_Frame_Eval_Error;
         return false;
     }
 
-    lowpc = (Address) row_pc;
-    //dwarf_printf("\t Got FDE data starting at 0x%lx; value_type %d, offset_relevant %d, offset/block len %d\n",
-    //        lowpc, (int) value_type, (int) offset_relevant, offset_or_block_len);
-
-    /**
-     * Interpret the rule and turn it into a real value.
-     **/
-
-    if (value_type == DW_EXPR_OFFSET || value_type == DW_EXPR_VAL_OFFSET)
-    {
-
-        bool done;
-        dwarf_printf("\tHandling returned FDE as expression\n");
-        if (!handleExpression(pc, register_num, orig_reg,
-                    arch, cons, done, err_result)) {
-            dwarf_printf("\t Error handling expression, ret false\n");
-            assert(err_result != FE_No_Error);
-            return false;
-        }
-        if (done) {
-            dwarf_printf("\t Handled expression, indicated done, returning\n");
-            return true;
-        }
-    }
-
-    bool indirect = false;
-
-    switch(value_type) 
+/*    switch(value_type) 
     {
         // For a val offset, the value of the register is (other_reg + const)
         case DW_EXPR_VAL_OFFSET:
@@ -383,11 +359,11 @@ bool DwarfFrameParser::getRegAtFrame_aux(Address pc,
                     return false;
                 }
 
-                if (!decodeDwarfExpression(llbuf, listlen, NULL, cons, arch)) {
-                    dwarf_printf("\t Failed to decode dwarf expr, ret false\n");
-                    err_result = FE_Frame_Eval_Error;
-                    return false;
-                }
+    if (!decodeDwarfExpression(llbuf, listlen, NULL, cons, arch)) {
+        dwarf_printf("\t Failed to decode dwarf expr, ret false\n");
+        err_result = FE_Frame_Eval_Error;
+        return false;
+    }
 
                 if (value_type == DW_EXPR_EXPRESSION) {
                     dwarf_printf("\t Handling expression, adding indirect\n");
@@ -403,7 +379,7 @@ bool DwarfFrameParser::getRegAtFrame_aux(Address pc,
     if (indirect) {
         dwarf_printf("\t Adding a dereference to handle \"address of\" operator\n");
         cons.pushOp(DwarfResult::Deref, width);
-    }
+    }*/
     return true;
 }
 
@@ -442,7 +418,7 @@ void DwarfFrameParser::setupFdeData()
 }
 
 
-bool DwarfFrameParser::getFrame(Address pc, Dwarf_Frame* &frame,
+bool DwarfFrameParser::getFDE(Address pc, Dwarf_Frame* &frame,
         Address &low, Address &high,
         FrameErrors_t &err_result) 
 {
@@ -454,7 +430,7 @@ bool DwarfFrameParser::getFrame(Address pc, Dwarf_Frame* &frame,
         int result = dwarf_cfi_addrframe(cfi_data[cur_fde],
                 (Dwarf_Addr) pc, &frame);
 
-        if (result != 0) {
+        if (result == -1) {
             dwarf_printf("\t Got ERROR return\n");
             err_result = FE_Bad_Frame_Data;
             return false;
@@ -501,7 +477,7 @@ bool DwarfFrameParser::getDwarfReg(Dyninst::MachRegister reg,
     return true;
 }
 
-bool DwarfFrameParser::handleExpression(Address pc,
+/*bool DwarfFrameParser::handleExpression(Address pc,
         Dwarf_Sword registerNum,
         Dyninst::MachRegister origReg,
         Dyninst::Architecture arch,
@@ -549,5 +525,6 @@ bool DwarfFrameParser::handleExpression(Address pc,
             }
     }
     return true;
-}
+}*/
+
 

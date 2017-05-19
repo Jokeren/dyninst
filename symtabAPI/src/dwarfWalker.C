@@ -1730,7 +1730,8 @@ bool DwarfWalker::decodeLocationList(Dwarf_Half attr,
     }
     else {
         dwarf_printf("(0x%lx) Decoding loclist location\n", id());
-        Dwarf_Op *locationList;
+
+        /*Dwarf_Op *locationList;
         size_t listLength;
         int status = dwarf_getlocation(&locationAttribute, &locationList, &listLength);
         if (status != 0) {
@@ -1739,11 +1740,38 @@ bool DwarfWalker::decodeLocationList(Dwarf_Half attr,
         }
 
         dwarf_printf("(0x%lx) location list with %d entries found\n", id(), (int) listLength);
+        */
 
-        if (!decodeLocationListForStaticOffsetOrAddress(&locationList,
-                    (Dwarf_Sword) listLength, locs, locationAttribute, initialStackValue)) {
+        Dwarf_Op * exprs = NULL;
+        size_t exprlen = 0; 
+        std::vector<LocDesc> locDescs;
+        ptrdiff_t offset = 0; 
+        Dwarf_Addr *basep = NULL, start, end;
+        do {
+            offset = dwarf_getlocations(&locationAttribute, offset, basep, 
+                    &start, &end, &exprs, &exprlen);
+            LocDesc ld;
+            ld.ld_lopc = start;
+            ld.ld_hipc = end;
+            ld.dwarfOp = exprs;
+            ld.opLen = exprlen;
+            locDescs.push_back(ld);
+        }while(offset > 0);
+        if (locDescs.size() <= 0) {
+            dwarf_printf("(0x%lx) Failed loclist decode: %d\n", id());
+            return true;
+        }
+
+
+        if(decodeLocationListForStaticOffsetOrAddress(locDescs, locDescs.size(), 
+                locs, locationAttribute, initialStackValue))
+        {
             return false;
         }
+        /*if (!decodeLocationListForStaticOffsetOrAddress(&locationList,
+                    (Dwarf_Sword) listLength, locs, locationAttribute, initialStackValue)) {
+            return false;
+        }*/
     }
 
     return true;
@@ -2249,27 +2277,36 @@ bool DwarfWalker::decipherBound(Dwarf_Attribute boundAttribute, bool /*is_info*/
     return true;
 }
 
+
 bool DwarfWalker::decodeExpression(Dwarf_Attribute &locationAttribute,
         std::vector<VariableLocation> &locs) 
 {
     Dwarf_Op * exprs = NULL;
     size_t exprlen = 0; 
-    int result = dwarf_getlocation(&locationAttribute, &exprs, &exprlen);
-    if(result!=0) return false;
 
-    bool ret = decodeLocationListForStaticOffsetOrAddress(&exprs, exprlen, 
+    std::vector<LocDesc> locDescs;
+    ptrdiff_t offset = 0; 
+    Dwarf_Addr *basep = NULL, start, end;
+    do {
+        offset = dwarf_getlocations(&locationAttribute, offset, basep, 
+                &start, &end, &exprs, &exprlen);
+        LocDesc ld;
+        ld.ld_lopc = start;
+        ld.ld_hipc = end;
+        ld.dwarfOp = exprs;
+        ld.opLen = exprlen;
+        locDescs.push_back(ld);
+    }while(offset > 0);
+
+    //assert(locDescs.size()!=1);
+    bool ret = decodeLocationListForStaticOffsetOrAddress(locDescs, 1, 
             locs, locationAttribute);
     return ret;
 }
 
-typedef struct {
-    Dwarf_Addr ld_lopc, ld_hipc;
-    Dwarf_Op * dwarfOp;
-    size_t opLen;
-}LocDesc;
 
 bool DwarfWalker::decodeLocationListForStaticOffsetOrAddress( 
-        Dwarf_Op ** /*locationList*/,
+        std::vector<LocDesc>& locationList,
         Dwarf_Sword listLength,
         std::vector<VariableLocation>& locs,
         Dwarf_Attribute &attr,
@@ -2305,34 +2342,10 @@ bool DwarfWalker::decodeLocationListForStaticOffsetOrAddress(
     uint64_t max_addr = (addr_size == 4) ? 0xffffffff : 0xffffffffffffffff;
     Address base = modLow;
 
-    std::vector<LocDesc> locDescs;
-    ptrdiff_t offset = 0; 
-    Dwarf_Addr *basep = NULL, start, end;
-    Dwarf_Die e = entry();
-    do {
-        offset = dwarf_ranges(&e, offset, basep, &start, &end);
-        Dwarf_Op * list_expr[listLength];
-        size_t exprlens[listLength];
-        int num_loc = dwarf_getlocation_addr(&attr, start, list_expr, 
-                exprlens, listLength); 
-        for(int i=0; i<num_loc; i++)
-        { 
-            LocDesc ld;
-            ld.ld_lopc = start;
-            ld.ld_hipc = end;
-            ld.dwarfOp = list_expr[i];
-            ld.opLen = exprlens[i];
-            locDescs.push_back(ld);
-        }
-    }while(offset > 0);
-    
-    // FIXME this asset should be uncommented?
-    //assert( (signed) listLength == locDescs.size() ); 
-
     for (unsigned locIndex = 0 ; locIndex < listLength; locIndex++) {
 
         /* There is only one location. */
-        LocDesc * location = &(locDescs[locIndex]);
+        LocDesc * location = &locationList[locIndex];
 
         VariableLocation loc;
         // Initialize location values.
@@ -2356,8 +2369,7 @@ bool DwarfWalker::decodeLocationListForStaticOffsetOrAddress(
         }
 
         long int *tmp = (long int *)initialStackValue;
-        /* FIXME: should 1 be passed as the size of the list of location being passed? */
-        bool result = decodeDwarfExpression(location->dwarfOp, 1, tmp, loc,
+        bool result = decodeDwarfExpression(location->dwarfOp, location->opLen, tmp, loc,
                 symtab()->getArchitecture());
         if (!result) {
             dwarf_printf("(0x%lx): decodeDwarfExpr failed\n", id());
@@ -2365,7 +2377,7 @@ bool DwarfWalker::decodeLocationListForStaticOffsetOrAddress(
         }
 
         if (location->ld_lopc == 0 &&
-                location->ld_hipc == (Dwarf_Addr) ~0) {
+            location->ld_hipc == (Dwarf_Addr) ~0) {
             // Unset low and high. Use the lexical block info if present, otherwise
             // pass through.
             if (hasRanges()) {
