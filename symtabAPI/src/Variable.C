@@ -41,6 +41,8 @@
 #include "Aggregate.h"
 #include "Function.h"
 #include <iterator>
+#include "dwarfExprParser.h"
+#include "dwarfResult.h"
 
 #include "symtabAPI/src/Object.h"
 
@@ -237,19 +239,55 @@ bool localVar::addLocation(const VariableLocation &location)
    return true;
 }
 
-void localVar::expandLocation(const VariableLocation &loc,
-                              std::vector<VariableLocation> &ret) {
-   if (loc.mr_reg != Dyninst::FrameBase) {
-      ret.push_back(loc);
-      return;
-   }
+void localVar::expandLocation(
+        const VariableLocation &loc,
+        std::vector<VariableLocation> &ret)
+{
+    if (loc.mr_reg != Dyninst::FrameBase) {
+        ret.push_back(loc);
+        return;
+    }
 
+    // We're referencing a frame base; must have a function or this
+    // is corrupted data. 
+    assert(func_);
 
-   // We're referencing a frame base; must have a function or this
-   // is corrupted data. 
-   assert(func_);
+    std::vector<VariableLocation> &func_fp = func_->getFramePtr();
 
-   std::vector<VariableLocation> &func_fp = func_->getFramePtr();
+    //Changing way to get frame pointer
+    /*auto dbg = func_->getModule()->exec()->getObject()->dwarf->frame_dbg();
+    Elf * elf = dwarf_getelf(*dbg);
+    Dwarf_CFI * cfi = dwarf_getcfi_elf(elf);
+
+    std::vector<VariableLocation> func_fp;
+
+    auto next_pc = loc.lowPC;
+    while(next_pc < loc.hiPC)
+    {
+        Dwarf_Frame * frame = NULL;
+        dwarf_cfi_addrframe(cfi, next_pc, &frame);
+
+        Dwarf_Addr start_pc, end_pc;
+        dwarf_frame_info(frame, &start_pc, &end_pc, NULL); 
+
+        Dwarf_Op * ops;
+        size_t nops;
+        int result = dwarf_frame_cfa(frame, &ops, &nops);
+        if (result != 0) return;
+
+        VariableLocation loc2;
+        auto arch = func_->getModule()->exec()->getObject()->getArch();
+        DwarfDyninst::SymbolicDwarfResult cons(loc2, arch);
+        if (!DwarfDyninst::decodeDwarfExpression(ops, nops, NULL, cons, arch)) {
+            //dwarf_printf("\t Failed to decode dwarf expr, ret false\n");
+            return;
+        }
+        loc2.lowPC = next_pc;
+        loc2.hiPC = end_pc;
+
+        func_fp.push_back(cons.val());
+        next_pc = end_pc;
+    }*/
 
    //#define DEBUG
 

@@ -88,7 +88,9 @@ public:
     // We use an entryPC (actually, can be any PC in the function)
     // because common has no idea what a Function is and I don't want
     // to move this to Symtab. 
-    bool getRegsForFunction(Address entryPC,
+    bool getRegsForFunction(
+            Address entryPC,
+            std::pair<Address, Address> range,
             MachRegister reg,
             std::vector<VariableLocation> &locs,
             FrameErrors_t &err_result);

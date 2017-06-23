@@ -154,6 +154,7 @@ bool DwarfFrameParser::getRegRepAtFrame(
 
 bool DwarfFrameParser::getRegsForFunction(
         Address entryPC,
+        std::pair<Address, Address> range,
         Dyninst::MachRegister reg,
         std::vector<VariableLocation> &locs,
         FrameErrors_t &err_result) 
@@ -162,6 +163,38 @@ bool DwarfFrameParser::getRegsForFunction(
     dwarf_printf("Entry to getRegsForFunction at 0x%lx, reg %s\n", entryPC, reg.name().c_str());
     err_result = FE_No_Error;
 
+    Elf * elf = dwarf_getelf(dbg);
+    Dwarf_CFI * cfi = dwarf_getcfi_elf(elf);
+
+    auto next_pc = entryPC;
+    while(next_pc < range.second)
+    {
+        Dwarf_Frame * frame = NULL;
+        dwarf_cfi_addrframe(cfi, next_pc, &frame);
+
+        Dwarf_Addr start_pc, end_pc;
+        dwarf_frame_info(frame, &start_pc, &end_pc, NULL); 
+
+        Dwarf_Op * ops;
+        size_t nops;
+        int result = dwarf_frame_cfa(frame, &ops, &nops);
+        if (result != 0) return false;
+
+        VariableLocation loc2;
+        DwarfDyninst::SymbolicDwarfResult cons(loc2, arch);
+        if (!DwarfDyninst::decodeDwarfExpression(ops, nops, NULL, cons, arch)) {
+            //dwarf_printf("\t Failed to decode dwarf expr, ret false\n");
+            return false;
+        }
+        loc2.lowPC = next_pc;
+        loc2.hiPC = end_pc;
+
+        locs.push_back(cons.val());
+        next_pc = end_pc;
+    }
+
+    return true;
+    
     /**
      * Initialize the FDE and CIE data.  This is only really done once,
      * after which setupFdeData will immediately return.
@@ -465,13 +498,15 @@ bool DwarfFrameParser::getFDE(Address pc, Dwarf_Frame* &frame,
         for (size_t cur_entry =0; cur_entry < cfi_data[cur_cfi].cfi_entries.size(); cur_entry++)
         {
             auto& cfi_entry = cfi_data[cur_cfi].cfi_entries[cur_entry];
+            
+            // if this entry is a CIE, skip
             if(dwarf_cfi_cie_p(&cfi_entry))
             {
                 continue;
             }
+
             lowpc = *cfi_entry.fde.start;
             hipc = *cfi_entry.fde.end;
-
             if (pc < lowpc || pc > hipc)
             {
                 continue;
