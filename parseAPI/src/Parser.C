@@ -105,6 +105,7 @@ Parser::Parser(CodeObject & obj, CFGFactory & fact, ParseCallbackManager & pcb) 
         parsing_printf("[%s:%d] CodeSource provides no CodeRegions"
                                " -- unparesable\n",
                        FILE__,__LINE__);
+        _parse_data = new StandardParseData(this);
         _parse_state = UNPARSEABLE;
         return;
     }
