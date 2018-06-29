@@ -4476,6 +4476,7 @@ void Object::parseLineInfoForAddr(Offset addr_to_find) {
     // no mod for offset means no line info for sure if we've parsed all ranges...
 }
 
+
 bool Object::hasDebugInfo()
 {
     Region *ignore;
