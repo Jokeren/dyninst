@@ -311,12 +311,12 @@ public:
     virtual ~Block();
     boost::recursive_mutex& lockable() { return boost::lockable_adapter<boost::recursive_mutex>::lockable(); }
 
-    inline Address start() const { return _start; }
-    inline Address end() const { return _end; }
-    inline Address lastInsnAddr() const {  return _lastInsn; }
-    inline Address last() const {  return lastInsnAddr(); }
-    inline Address size() const {  return _end - _start; }
-    bool containsAddr(Address addr) const {   return addr >= _start && addr < _end; }
+    Address start() const { return _start; }
+    Address end() const { return _end; }
+    Address lastInsnAddr() const { return _lastInsn; } 
+    virtual Address last() const { return lastInsnAddr(); }
+    Address size() const { return _end - _start; }
+    bool containsAddr(Address addr) const { return addr >= _start && addr < _end; }
 
     bool parsed() const {  return _parsed; }
 
