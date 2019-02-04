@@ -107,7 +107,7 @@ Parser::Parser(CodeObject & obj, CFGFactory & fact, ParseCallbackManager & pcb) 
             FILE__,__LINE__);
         _parse_state = UNPARSEABLE;
     }
-
+    
     if (_parse_state != UNPARSEABLE) {
         // check whether regions overlap
         vector<CodeRegion *> const& regs = obj.cs()->regions();
@@ -115,7 +115,7 @@ Parser::Parser(CodeObject & obj, CFGFactory & fact, ParseCallbackManager & pcb) 
         sort(copy.begin(),copy.end(),less_cr());
 
         // allocate a sink block -- region is arbitrary
-        _sink = _cfgfact._mksink(&_obj,copy[0]);
+        _sink = new Block(&_obj, regs[0], std::numeric_limits<Address>::max());
 
         bool overlap = false;
         CodeRegion * prev = copy[0], *cur = NULL;
@@ -123,15 +123,17 @@ Parser::Parser(CodeObject & obj, CFGFactory & fact, ParseCallbackManager & pcb) 
             cur = copy[i];
             if(cur->offset() < prev->offset() + prev->length()) {
                 parsing_printf("Overlapping code regions [%lx,%lx) and [%lx,%lx)\n",
-                    prev->offset(),prev->offset()+prev->length(),
-                    cur->offset(),cur->offset()+cur->length());
+                               prev->offset(),prev->offset()+prev->length(),
+                               cur->offset(),cur->offset()+cur->length());
                 overlap = true;
                 break;
             }
         }
 
-        if(overlap)
+        if(overlap) {
             _parse_data = new OverlappingParseData(this,copy);
+            return;
+        }
     }
 
     _parse_data = new StandardParseData(this);
