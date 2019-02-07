@@ -223,7 +223,8 @@ LineInformation *Module::parseLineInformation() {
         // share our string table
         lineInfo_->setStrings(strings_);
     }
-    if (exec()->getObject()->hasDebugInfo()) {
+    if (exec()->getArchitecture() != Arch_cuda &&
+      (exec()->getObject()->hasDebugInfo() || !info_.empty())) {
         // Parse any CUs that have been added to our list
         if(!info_.empty()) {
             for(auto cu = info_.begin();
