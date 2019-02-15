@@ -216,33 +216,40 @@ bool Module::getSourceLines(std::vector<LineNoTuple> &lines, Offset addressInRan
 }
 
 LineInformation *Module::parseLineInformation() {
-    // Allocate if none
-    if (!lineInfo_)
-    {
+    if (exec()->getArchitecture() != Arch_cuda &&
+      (exec()->getObject()->hasDebugInfo() || !info_.empty())) {
+      // Allocate if none
+      if (!lineInfo_)
+      {
         lineInfo_ = new LineInformation;
         // share our string table
         lineInfo_->setStrings(strings_);
-    }
-    if (exec()->getArchitecture() != Arch_cuda &&
-      (exec()->getObject()->hasDebugInfo() || !info_.empty())) {
-        // Parse any CUs that have been added to our list
-        if(!info_.empty()) {
-            for(auto cu = info_.begin();
-                    cu != info_.end();
-                    ++cu)
-            {
-                exec()->getObject()->parseLineInfoForCU(*cu, lineInfo_);
-            }
-        }
+      }
+      // Parse any CUs that have been added to our list
+      if(!info_.empty()) {
+          for(auto cu = info_.begin();
+                  cu != info_.end();
+                  ++cu)
+          {
+              exec()->getObject()->parseLineInfoForCU(*cu, lineInfo_);
+          }
+      }
 
-        // Before clearing the CU list (why is it even done anyway?), make sure to
-        // call getCompDir so the comp_dir is stored in a static variable.
-        getCompDir();
+      // Before clearing the CU list (why is it even done anyway?), make sure to
+      // call getCompDir so the comp_dir is stored in a static variable.
+      getCompDir();
 
-        // Clear list of work to do
-        info_.clear();
+      // Clear list of work to do
+      info_.clear();
     } else {
+      // Allocate if none
+      if (!lineInfo_)
+      {
+        lineInfo_ = new LineInformation;
+        // share our string table
+        lineInfo_->setStrings(strings_);
         exec()->getObject()->parseLineInfo(lineInfo_);
+      }
     }
     return lineInfo_;
 }
